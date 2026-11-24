@@ -96,6 +96,16 @@ char *strcpy(char *dest, const char *src)
 EXPORT_SYMBOL(strcpy);
 #endif
 
+#ifndef __HAVE_ARCH_STPCPY
+char *stpcpy(char *dest, const char *src)
+{
+	while ((*dest++ = *src++) != '\0')
+		/* nothing */;
+	return dest - 1;
+}
+EXPORT_SYMBOL(stpcpy);
+#endif
+
 #ifndef __HAVE_ARCH_STRNCPY
 /**
  * strncpy - Copy a length-limited, C-string

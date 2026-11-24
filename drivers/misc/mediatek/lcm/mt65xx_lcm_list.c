@@ -563,6 +563,10 @@ struct LCM_DRIVER *lcm_driver_list[] = {
 	&nt35521_hd_dsi_vdo_truly_nt50358_qhd_lcm_drv,
 #endif
 
+#if defined(U3A_GC9503V_FWVGA_DSI_YKL)
+	&u3a_gc9503v_fwvga_dsi_ykl_lcm_drv,
+#endif
+
 #if defined(NT35595_FHD_DSI_CMD_TRULY_TPS65132)
 	&nt35595_fhd_dsi_cmd_truly_tps65132_lcm_drv,
 #endif

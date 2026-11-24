@@ -121,6 +121,7 @@ extern struct LCM_DRIVER rm68190_dsi_vdo_lcm_drv;
 extern struct LCM_DRIVER nt35521_hd_dsi_vdo_truly_nt50358_lcm_drv;
 extern struct LCM_DRIVER nt35521_hd_dsi_vdo_truly_nt50358_fwvga_lcm_drv;
 extern struct LCM_DRIVER nt35521_hd_dsi_vdo_truly_nt50358_qhd_lcm_drv;
+extern struct LCM_DRIVER u3a_gc9503v_fwvga_dsi_ykl_lcm_drv;
 extern struct LCM_DRIVER nt35596_fhd_dsi_vdo_truly_lcm_drv;
 extern struct LCM_DRIVER nt35595_fhd_dsi_vdo_truly_lcm_drv;
 extern struct LCM_DRIVER nt35595_fhd_dsi_cmd_truly_lcm_drv;

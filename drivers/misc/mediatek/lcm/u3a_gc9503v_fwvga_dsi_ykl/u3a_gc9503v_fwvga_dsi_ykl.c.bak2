@@ -1,0 +1,234 @@
+/*
+ * u3a_gc9503v_fwvga_dsi_ykl.c
+ * Reconstructed Mediatek LCM driver for GC9503V (YKL) 480x960 DSI
+ *
+ * NOTE: init_setting[] adapted from community GC9503 sequences.
+ * Replace init_setting with vendor table from 5033FR if/when available.
+ */
+
+#ifndef BUILD_LK
+#include <linux/string.h>
+#include <linux/kernel.h>
+#endif
+
+#include <linux/module.h>
+#include <linux/delay.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
+#include "lcm_drv.h"  /* use your tree's path if different */
+
+#ifdef BUILD_LK
+#include <platform/upmu_common.h>
+#include <platform/mt_gpio.h>
+#include <platform/mt_i2c.h>
+#include <platform/mt_pmic.h>
+#include <string.h>
+#elif defined(BUILD_UBOOT)
+#include <asm/arch/mt_gpio.h>
+#else
+/*#include <mach/mt_pm_ldo.h>*/
+#ifdef CONFIG_MTK_LEGACY
+#include <mach/mt_gpio.h>
+#endif
+#endif
+#ifdef CONFIG_MTK_LEGACY
+#include <cust_gpio_usage.h>
+#endif
+#ifndef CONFIG_FPGA_EARLY_PORTING
+#if defined(CONFIG_MTK_LEGACY)
+#include <cust_i2c.h>
+#endif
+#endif
+
+static struct LCM_UTIL_FUNCS lcm_util;
+
+#define SET_RESET_PIN(v)	(lcm_util.set_reset_pin((v)))
+#define MDELAY(ms)             mdelay(ms)
+#define UDELAY(us)             udelay(us)
+
+/* For compatibility if macros not provided by your header */
+#ifndef REGFLAG_DELAY
+#define REGFLAG_DELAY              0xFE
+#endif
+#ifndef REGFLAG_END_OF_TABLE
+#define REGFLAG_END_OF_TABLE       0xFF
+#endif
+
+/* LCM setting table struct widely used in MTK drivers */
+struct LCM_setting_table {
+    unsigned cmd;
+    unsigned char count;
+    unsigned char para_list[64];
+};
+
+/* --- Panel params --- */
+static struct LCM_PARAMS lcm_params = {
+    .type   = LCM_TYPE_DSI,
+    .width  = 480,
+    .height = 960,
+    .dsi = {
+        .mode = SYNC_PULSE_VDO_MODE,
+        .LANE_NUM = LCM_TWO_LANE,
+        .data_format.format = LCM_DSI_FORMAT_RGB888,
+        .data_format.color_order = LCM_COLOR_ORDER_RGB,
+        .vertical_sync_active = 6,
+        .vertical_backporch = 20,
+        .vertical_frontporch = 20,
+        .vertical_active_line = 960,
+        .horizontal_sync_active = 10,
+        .horizontal_backporch = 40,
+        .horizontal_frontporch = 40,
+        .horizontal_active_pixel = 480,
+        /* PLL params are vendor-specific; tune if needed */
+        .pll_div1 = 0,
+        .pll_div2 = 1,
+        .fbk_div = 16,
+    },
+};
+
+/*
+ * init_setting:
+ * This set is adapted from public GC9503 init sequences (ESP/Arduino/others) and Macau combined.
+ * It is a best-effort sequence and may need vendor-specific adjustments.
+ */
+static struct LCM_setting_table init_setting[] = {
+    /* Unlock or command page */
+    {0xFF, 3, {0xFF, 0x98, 0x06}},
+    {0x01, 0, { }}, /* Software reset sometimes done by 0x01 */
+    {REGFLAG_DELAY, 120, { } },
+
+    /* Common init registers (examples adapted from community sources) */
+    {0xB0, 2, {0x04, 0x0B}},
+    {0xB1, 2, {0x03, 0x03}},
+    {0xB2, 1, {0x08}},
+    {0xB6, 2, {0x3A, 0x36}},
+    {0xC0, 7, {0x10,0x10,0x03,0x64,0x06,0x02,0x00}},
+    {0xC1, 2, {0x10, 0x10}},
+    {0xC5, 3, {0x64,0x03,0x02}},
+    {0xD0, 2, {0x07, 0x0A}},
+    {0xE0, 16, {0x00,0x0A,0x0F,0x10,0x1A,0x2B,0x36,0x46,0x4F,0x56,0x5E,0x67,0x72,0x7C,0x86,0x90}},
+    {0xE1, 16, {0x00,0x09,0x0E,0x0F,0x19,0x2A,0x35,0x45,0x4E,0x55,0x5D,0x66,0x71,0x7B,0x85,0x8F}},
+
+    /*
+     * CASET/RASET variants to control orientation on YKL modules (they ignore MADCTL).
+     * Confirmed geometry from logo.bin: 0x01DF (479 -> 480 cols), 0x03BF (959 -> 960 rows).
+     *
+     * Variant A = RASET reversed (most likely for 180° flip) -> recommended first try
+     * Variant B = both CASET & RASET reversed (alternate 180°)
+     * Variant C = CASET reversed, RASET normal (mirror alternative)
+     *
+     * Uncomment exactly one block (A or B or C) and keep the others commented out.
+     */
+
+    /* ===== Variant A: RASET reversed (try this first) ===== */
+    {0x2A, 4, {0x00, 0x00, 0x01, 0xDF}},  /* CASET: 0..0x01DF (480 cols) */
+    {0x2B, 4, {0x03, 0xBF, 0x00, 0x00}},  /* RASET: reversed 0x03BF..0x0000 (960 rows reversed) */
+
+    /*
+    // ===== Variant B: both CASET & RASET reversed =====
+    {0x2A, 4, {0x01, 0xDF, 0x00, 0x00}},  // CASET reversed
+    {0x2B, 4, {0x03, 0xBF, 0x00, 0x00}},  // RASET reversed
+    */
+
+    /*
+    // ===== Variant C: CASET reversed, RASET normal =====
+    {0x2A, 4, {0x01, 0xDF, 0x00, 0x00}},  // CASET reversed
+    {0x2B, 4, {0x00, 0x00, 0x03, 0xBF}},  // RASET normal
+    */
+
+    /* Exit sleep / display on sequence */
+    {0x11, 0, { }}, /* Sleep out */
+    {REGFLAG_DELAY, 120, { } },
+
+    {0x29, 0, { }}, /* Display on */
+    {REGFLAG_DELAY, 20, { } },
+    {REGFLAG_END_OF_TABLE, 0x00, { } }
+};
+
+/* Optional suspend sequence */
+static struct LCM_setting_table lcm_suspend_setting[] = {
+    {0x28, 0, { }}, /* display off */
+    {REGFLAG_DELAY, 20, { } },
+    {0x10, 0, { }}, /* sleep in */
+    {REGFLAG_DELAY, 120, { } },
+    {REGFLAG_END_OF_TABLE, 0x00, { } }
+};
+
+/* helper to push a table over DSI */
+static void push_table(struct LCM_setting_table *table, unsigned int count, unsigned char force_update)
+{
+    unsigned int i;
+    for (i = 0; i < count; i++) {
+        unsigned cmd = table[i].cmd;
+        switch (cmd) {
+            case REGFLAG_DELAY:
+                MDELAY(table[i].count);
+                break;
+            case REGFLAG_END_OF_TABLE:
+                break;
+            default:
+                /* Use the MTK-provided dsi write helper */
+                lcm_util.dsi_set_cmdq_V2(cmd, table[i].count, (unsigned char *)table[i].para_list, force_update);
+                break;
+        }
+    }
+}
+
+/* LCM_util setter from MTK layer */
+static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
+{
+    memcpy(&lcm_util, util, sizeof(struct LCM_UTIL_FUNCS));
+}
+
+/* Fill params */
+static void lcm_get_params(struct LCM_PARAMS *params)
+{
+    memcpy(params, &lcm_params, sizeof(struct LCM_PARAMS));
+}
+
+/* init */
+static void lcm_init(void)
+{
+    /* Reset */
+    SET_RESET_PIN(1);
+    MDELAY(10);
+    SET_RESET_PIN(0);
+    MDELAY(40);
+    SET_RESET_PIN(1);
+    MDELAY(300);
+
+    push_table(init_setting, sizeof(init_setting)/sizeof(struct LCM_setting_table), 1);
+    MDELAY(70); /* small settle delay before returning */
+}
+
+/* suspend */
+static void lcm_suspend(void)
+{
+    push_table(lcm_suspend_setting, sizeof(lcm_suspend_setting)/sizeof(struct LCM_setting_table), 1);
+}
+
+static void lcm_resume(void)
+{
+	lcm_init();
+}
+
+/* compare ID - try to read ID if DSI read supported, otherwise fall back */
+static unsigned int lcm_compare_id(void)
+{
+    /* Many MTK drivers attempt a DSI read of a specific register (0xA1/0xDA/0xDC etc).
+     * Here we return 1 to allow driver to be used; if you can extract vendor
+     * compare_id routine, insert it here to be precise.
+     */
+    return 1;
+}
+
+/* Export driver struct */
+struct LCM_DRIVER u3a_gc9503v_fwvga_dsi_ykl_lcm_drv = {
+    .name = "u3a_gc9503v_fwvga_dsi_ykl",
+    .set_util_funcs = lcm_set_util_funcs,
+    .get_params = lcm_get_params,
+    .init = lcm_init,
+    .suspend = lcm_suspend,
+    .resume = lcm_resume,
+    .compare_id = lcm_compare_id,
+};
